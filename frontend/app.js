@@ -301,7 +301,7 @@ function drawCastle(time) {
 function drawRain(time){
   if(reduceMotion) return;
   ctx.strokeStyle='#96a3cb6d';ctx.lineWidth=.55;ctx.beginPath();
-  for(const r of rain){const x=(r.x+(time*.026*r.s))%W;const y=(r.y+(time*.048*r.s))%H;ctx.moveTo(x,y);ctx.lineTo(x-1.5,y+r.l);}
+  for(const r of rain){const x=(r.x+(time*.026*r.s))%W;const y=(r.y+(time*.048*r.s))%H;ctx.moveTo(x,y);ctx.lineTo(x+1.5,y+r.l);}
   ctx.stroke();
 }
 const sprite=dom.merchantSprite.getContext('2d');

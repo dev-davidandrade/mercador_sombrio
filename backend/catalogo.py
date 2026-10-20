@@ -38,9 +38,12 @@ TAXAS = {
 }
 
 def normalizar(texto: str) -> str:
-    """Minúsculas, sem acentos, com espaços externos removidos."""
-    texto = texto.strip().lower()
-    return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
+    texto = " ".join(texto.strip().lower().split())
+
+    return "".join(
+        c for c in unicodedata.normalize("NFD", texto)
+        if unicodedata.category(c) != "Mn"
+    )
 
 CATEGORIAS = {
     'armas': ['espada','espada longa','adaga','machado','lanca','martelo de guerra','arco','besta','cajado','foice amaldicoada'],
@@ -50,7 +53,11 @@ CATEGORIAS = {
     'magia': ['pergaminho de teleporte','anel de protecao','amuleto sombrio','grimorio proibido','olho de dragao','alma engarrafada'],
     'utilidades': ['tocha','corda','mochila','mapa antigo','racao de viagem','lanterna','gazua'],
 }
-CATEGORIA_POR_ITEM = {nome: categoria for categoria, nomes in CATEGORIAS.items() for nome in nomes}
+CATEGORIA_POR_ITEM = {
+    nome: categoria
+    for categoria, nomes in CATEGORIAS.items()
+    for nome in nomes
+}
 
 def nome_bonito(nome: str) -> str:
     correcoes = {'pocao': 'Poção', 'pocoes': 'Poções', 'lanca': 'Lança', 'fumaca': 'Fumaça', 'amaldicoada': 'Amaldiçoada', 'antidoto': 'Antídoto', 'protecao': 'Proteção', 'grimorio': 'Grimório', 'dragao': 'Dragão', 'racao': 'Ração', 'gazua': 'Gazua', 'de': 'de', 'do': 'do', 'da': 'da', 'das': 'das', 'dos': 'dos', 'pantano': 'Pântano', 'ruinas': 'Ruínas'}
