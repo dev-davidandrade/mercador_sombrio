@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0c1024">
+  <meta name="description" content="Mercador Sombrio — RPG de negociação com agente de IA e servidor MCP.">
+  <title>Mercador Sombrio | As Portas da Noite</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script defer src="/static/app.js"></script>
+</head>
+<body>
+<div class="world" id="world">
+  <canvas id="scene" width="480" height="270" aria-hidden="true"></canvas>
+  <div class="world-gradient" aria-hidden="true"></div>
+  <div class="vignette" aria-hidden="true"></div>
+  <div class="cloud-veil" aria-hidden="true"></div>
+  <div class="sight-line" aria-hidden="true"></div>
+
+  <header class="hud">
+    <div class="hud-left">
+      <button class="hud-bag pixel-frame" id="bagButton" type="button" aria-label="Abrir bolsa e inventário">
+        <span class="bag-emoji" aria-hidden="true">🎒</span>
+        <span class="hud-bag-label">MINHA BOLSA<small>Inventário</small></span>
+      </button>
+      <span class="gold-pill"><span class="coin-icon" aria-hidden="true">✦</span><span id="hudGold">1.000</span> <small>OURO</small></span>
+    </div>
+    <div class="brand" aria-label="Mercador Sombrio">
+      <div class="brand-runic">✦ &nbsp; A TAVERNA DAS SOMBRAS &nbsp; ✦</div>
+      <h1>MERCADOR <span>SOMBRIO</span></h1>
+      <p>RELÍQUIAS • POÇÕES • SEGREDOS</p>
+    </div>
+    <div class="hud-right">
+      <span class="connection-dot" id="connectionDot" aria-hidden="true"></span>
+      <span class="connection-label" id="connectionLabel">CONECTANDO...</span>
+      <button class="soundless" id="motionButton" type="button" title="Ativar ou reduzir animações" aria-label="Reduzir animações">✧ EFEITOS</button>
+    </div>
+  </header>
+
+  <main class="viewport" aria-label="Cena interativa do mercador sombrio">
+    <div class="scene-story">
+      <span class="eyebrow">CAPÍTULO I &nbsp; / &nbsp; O ENCONTRO</span>
+      <h2>Nem tudo que brilha<br>é <em>ouro.</em></h2>
+      <p>Alguns tesouros cobram um preço maior.</p>
+      <button id="showStore" class="primary-cta" type="button"><span>⟡</span> EXPLORAR MERCADORIAS <span>→</span></button>
+    </div>
+
+    <div class="merchant-area" id="merchantArea">
+      <div class="merchant-speech" id="merchantSpeech" aria-hidden="true">Pssst... aventureiro!</div>
+      <button type="button" id="merchantButton" class="merchant-button" aria-label="Falar com o Mercador Sombrio" title="Conversar com o mercador">
+        <canvas id="merchantSprite" width="112" height="128" aria-hidden="true"></canvas>
+      </button>
+      <div class="merchant-base" aria-hidden="true"></div>
+      <div class="merchant-label"><span>✧</span> MERCADOR SOMBRIO <span>✧</span></div>
+      <div class="merchant-hint">CLIQUE PARA CONVERSAR</div>
+    </div>
+
+    <section class="dialogue pixel-frame" id="dialogue" aria-labelledby="dialogueTitle" hidden>
+      <div class="dialogue-topline">
+        <div class="dialogue-speaker"><span class="dialogue-avatar" aria-hidden="true">◈</span><div><span class="dialogue-overline">VOCÊ ESTÁ FALANDO COM</span><h3 id="dialogueTitle">O Mercador Sombrio</h3></div></div>
+        <button class="icon-button" id="closeDialogue" type="button" aria-label="Fechar diálogo">✕</button>
+      </div>
+      <div class="dialogue-messages" id="messages" role="log" aria-live="polite" aria-relevant="additions">
+        <div class="message merchant-message"><div class="message-name">MERCADOR</div><p>Ora, ora... Uma alma viva à minha porta. Queres negociar?</p></div>
+      </div>
+      <div class="dialogue-actions">
+        <button class="chip" id="quickStore" type="button">✧ Ver mercadorias</button>
+        <button class="chip" id="quickBag" type="button">◈ Minha bolsa</button>
+        <button class="chip" id="quickAsk" type="button">☽ Poção de vida</button>
+      </div>
+      <form class="chat-form" id="chatForm">
+        <label class="sr-only" for="chatInput">Sua mensagem para o mercador</label>
+        <input id="chatInput" placeholder="Diga algo ao mercador..." autocomplete="off" maxlength="1000" required>
+        <button type="submit" id="sendButton" aria-label="Enviar mensagem">ENVIAR <span>➤</span></button>
+      </form>
+      <div class="dialogue-footnote"><span id="chatModeLabel">MODO DE DEMONSTRAÇÃO</span><span>⟡ &nbsp; MERCADO NOTURNO</span></div>
+    </section>
+  </main>
+
+  <footer class="bottom-bar">
+    <span>✧ &nbsp; BEM-VINDO ÀS TERRAS ESQUECIDAS</span>
+    <span>UM PROJETO COM <b>IA + MCP</b> &nbsp; · &nbsp; VERSÃO 0.1</span>
+  </footer>
+</div>
+
+<div class="shade" id="shade" hidden></div>
+<aside class="side-panel pixel-frame" id="storePanel" role="dialog" aria-modal="true" aria-labelledby="storeTitle" hidden>
+  <div class="panel-heading"><div><span class="eyebrow">INVENTÁRIO DO MERCADOR</span><h2 id="storeTitle">O Arsenal Noturno</h2><p>Armas, proteções e segredos a um preço justo... talvez.</p></div><button class="icon-button" data-close type="button" aria-label="Fechar loja">✕</button></div>
+  <div class="catalogue-controls"><label class="sr-only" for="itemSearch">Buscar item</label><input id="itemSearch" type="search" placeholder="⌕ Buscar mercadoria..."><div class="category-row" id="categories" aria-label="Categorias"></div></div>
+  <div class="catalogue-list" id="catalogueList" aria-live="polite"></div>
+  <div class="panel-footer">◈ &nbsp; TODAS AS VENDAS SÃO FINAIS, VIAJANTE...</div>
+</aside>
+
+<aside class="side-panel bag-panel pixel-frame" id="bagPanel" role="dialog" aria-modal="true" aria-labelledby="bagTitle" hidden>
+  <div class="panel-heading"><div><span class="eyebrow">O QUE VOCÊ CARREGA</span><h2 id="bagTitle">Bolsa do Aventureiro</h2><p>Tesouros de uma vida... ou de uma noite.</p></div><button class="icon-button" data-close type="button" aria-label="Fechar bolsa">✕</button></div>
+  <div class="wallet-card"><span>SEU SALDO ATUAL</span><strong><span aria-hidden="true">✦</span> <span id="bagGold">1.000</span></strong><small>MOEDAS DE OURO</small></div>
+  <div class="inventory-title"><span>ITENS NA BOLSA</span><span id="itemCount">0 ITENS</span></div>
+  <div class="inventory-list" id="inventoryList"><p class="empty-state">Tua bolsa ainda está vazia, aventureiro.</p></div>
+  <div class="panel-footer panel-actions"><span id="purchaseCount">0 COMPRAS REGISTRADAS</span><button class="text-button" id="resetButton" type="button">↺ REINICIAR DEMONSTRAÇÃO</button></div>
+</aside>
+
+<div class="modal-wrap" id="purchaseModal" role="dialog" aria-modal="true" aria-labelledby="purchaseTitle" hidden>
+  <div class="purchase-modal pixel-frame">
+    <div class="panel-heading"><div><span class="eyebrow">CONTRATO DE COMÉRCIO</span><h2 id="purchaseTitle">Confirmar negociação</h2></div><button class="icon-button" id="closePurchase" type="button" aria-label="Fechar compra">✕</button></div>
+    <p class="purchase-description" id="purchaseItemName">Item selecionado</p>
+    <form id="purchaseForm">
+      <div class="purchase-grid"><label>QUANTIDADE<input type="number" id="purchaseQuantity" min="1" max="1000" value="1" required></label><label>DESTINO DA ENTREGA<select id="purchaseDestination"></select></label></div>
+      <div class="receipt" aria-live="polite"><div><span>Preço unitário</span><strong id="unitPrice">—</strong></div><div><span>Subtotal</span><strong id="subTotal">—</strong></div><div><span>Entrega pessoal</span><strong id="deliveryPrice">—</strong></div><div class="receipt-total"><span>TOTAL</span><strong id="totalPrice">—</strong></div></div>
+      <div class="purchase-error" id="purchaseError" role="alert" hidden></div>
+      <div class="purchase-buttons"><button type="button" class="cancel" id="cancelPurchase">CANCELAR</button><button type="submit" class="buy" id="confirmPurchase">✦ COMPRAR AGORA</button></div>
+    </form>
+    <p class="disclaimer">O mercador entrega pessoalmente, até os confins do reino.</p>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
