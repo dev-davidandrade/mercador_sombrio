@@ -61,8 +61,12 @@ def create_app() -> FastAPI:
 
     @app.get('/api/saude')
     async def saude():
-        return {'status': 'online', 'versao': '0.1.0', 'modo_ia': agente.modo_ia(),
-                'ferramentas_mcp': ['listar_loja', 'consultar_item', 'consultar_taxa', 'calcular_total']}
+        return {
+            'status': 'online',
+            'versao': '0.1.0',
+            'modo_ia': agente.modo_ia(),
+            'ferramentas_mcp': sorted(agente.PERMITIDAS),
+        }
 
     @app.get('/api/loja')
     async def loja():

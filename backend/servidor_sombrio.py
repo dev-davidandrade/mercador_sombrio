@@ -8,55 +8,75 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from pydantic import StrictInt, StrictFloat
 
-from backend.catalogo import LOJA, TAXAS, normalizar, CATEGORIA_POR_ITEM, nome_bonito
+from backend.catalogo import (
+    CATEGORIAS,
+    CATEGORIA_POR_ITEM,
+    LOJA,
+    TAXAS,
+    nome_bonito,
+    normalizar,
+)
 
 mcp = FastMCP('Vendedor Sombrio')
 
 
 @mcp.tool()
 def listar_loja() -> dict[str, Any]:
-    """Lista todos os itens à venda.
+    """Lista todas as categorias, mercadorias e destinos da loja.
+
+    Use para perguntas gerais como:
+    'Quais mercadorias você tem?', 'Quais itens você vende?'
+    ou 'Quais categorias existem?'.
     """
-    return {'itens': LOJA, 'locais de entrega': TAXAS}
+    return {
+        'categorias': list(CATEGORIAS),
+        'itens': LOJA,
+        'locais de entrega': TAXAS,
+    }
 
 
 @mcp.tool()
 def listar_itens(tipo: str = "") -> dict[str, Any]:
-    """Lista mercadorias disponíveis e seus preços.
+    """Lista mercadorias disponíveis e seus preços, podendo filtrar por categoria ou nome.
     
-    Se tipo estiver vazio, retorna todos os itens.
-    Exemplos de filtro:
-    - 'armas': todas as armas
-    - 'armas curtas': adaga e machado
-    - 'armas longas': lança e martelo de guerra
-    - 'armas de longo alcance': arco, besta
-    - 'armas magicas': cajado, foice amaldicoada
-    - 'espadas': itens com espada no nome
-    - 'laminas': espada, espada longa, adaga, machado e foice amaldicoada
-    - 'municao': flechas, flechas de fogo, virotes, facas de arremesso
-    - 'bombas': bomba, bomba de fumaca
-    - 'pocoes': todas as poções
-    - 'armaduras': equipamentos defensivos
-    - 'pergaminhos': pergaminhos disponíveis
-    - 'outros itens': itens que não se encaixam nas categorias acima
-     mas existem na loja como por exemplo: gazua ou lanterna, tocha ou
-     mapa_antigo
+    Filtros disponíveis: armas, armas curtas, armas longas,
+    armas de longo alcance, armas magicas, espadas, laminas,
+    municao, bombas, pocoes, armaduras, pergaminhos e outros itens.
+    Sem filtro, retorna todas as mercadorias.
     """
-
     categorias = {
         'arma': 'armas',
         'armas': 'armas',
         'armadura': 'armaduras',
         'armaduras': 'armaduras',
+        'equipamento': 'armaduras',
         'equipamentos': 'armaduras',
         'pocao': 'pocoes',
         'pocoes': 'pocoes',
         'magia': 'magia',
+        'magico': 'magia',
         'magicos': 'magia',
         'municao': 'municoes',
         'municoes': 'municoes',
         'utilidade': 'utilidades',
         'utilidades': 'utilidades',
+        'outro item': 'utilidades',
+        'outros itens': 'utilidades',
+    }
+    grupos = {
+        'armas curtas': {'adaga', 'machado'},
+        'armas longas': {'lanca', 'martelo de guerra'},
+        'armas de longo alcance': {'arco', 'besta'},
+        'armas magicas': {'cajado', 'foice amaldicoada'},
+        'lamina': {
+            'espada', 'espada longa', 'adaga',
+            'machado', 'foice amaldicoada',
+        },
+        'laminas': {
+            'espada', 'espada longa', 'adaga',
+            'machado', 'foice amaldicoada',
+        },
+        'bombas': {'bomba', 'bomba de fumaca'},
     }
 
     filtro = normalizar(tipo)
@@ -71,11 +91,14 @@ def listar_itens(tipo: str = "") -> dict[str, Any]:
             if CATEGORIA_POR_ITEM[nome] == categoria
         ]
 
-    else:
-        # Espadas -> espada
-        # Pergaminhos -> pergaminho
-        termo = filtro [:-1] if filtro.endswith('s') else filtro
+    elif filtro in grupos:
+        encontrados = [
+            nome for nome in LOJA
+            if nome in grupos[filtro]
+        ]
 
+    else:
+        termo = filtro[:-1] if filtro.endswith('s') else filtro
         encontrados = [
             nome for nome in LOJA
             if termo in nome
@@ -92,9 +115,9 @@ def listar_itens(tipo: str = "") -> dict[str, Any]:
     ]
 
     return {
-        'filtro': tipo or 'todos',
+        'filtro': filtro or 'todos',
         'quantidade': len(itens),
-        'itens': itens
+        'itens': itens,
     }
 
 

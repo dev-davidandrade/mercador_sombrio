@@ -4,6 +4,7 @@ O modo de demonstração não faz chamadas a modelos ou MCP; é explicitamente i
 como tal na API/UI. A loja e as compras funcionam em ambos os modos.
 """
 import json
+import logging
 import os
 import sys
 from datetime import timedelta
@@ -44,8 +45,18 @@ REGRA = (
     "Use consultar_taxa para consultar o frete de um local. "
     "Use calcular_total para calcular um orçamento, "
     "após obter preço e frete pelas ferramentas. "
-    "Use listar_loja quando precisar consultar o "
-    "catálogo completo. "
+    "Quando o jogador perguntar genericamente quais itens "
+    "ou mercadorias você tem, vende ou oferece, "
+    "use listar_loja e apresente TODAS as categorias "
+    "retornadas pela ferramenta, sem omitir nenhuma. "
+    "Apresente os nomes em linguagem natural: armas, "
+    "munições, armaduras, poções, itens mágicos e utilidades. "
+    "Nesse pedido geral, apresente primeiro as categorias "
+    "e pergunte qual delas o jogador deseja explorar. "
+    "Se ele pedir todos os produtos, liste as mercadorias "
+    "agrupadas por categoria. "
+    "Se perguntar por uma categoria específica, "
+    "use listar_itens com o filtro correspondente. "
 
     "REGRAS COMERCIAIS: "
     "A moeda utilizada é o ouro. "
@@ -97,8 +108,12 @@ def resposta_demo(mensagem: str) -> str:
     if local:
         return f'Até {nome_bonito(local)}, a entrega custa {TAXAS[local]:g} moedas de ouro. Eu mesmo levarei tua encomenda...'
     if any(k in texto for k in ['loja', 'venda', 'mercadoria', 'catalogo', 'itens', 'voce tem']):
-        return ('Tenho armas, poções, armaduras e relíquias que poucos ousam nomear. '
-                'Abre a vitrine para conhecer cada item e seu preço exato, aventureiro...')
+        return (
+            'Tenho armas, munições, armaduras, poções, '
+            'itens mágicos e utilidades, viajante. '
+            'Abre a vitrine para conhecer as mercadorias '
+            'e seus preços.'
+        )
     if 'comprar' in texto:
         return 'Escolhe um item na vitrine. Lá poderás indicar a quantidade, o destino e confirmar o pagamento em ouro.'
     return ('Saudações, viajante... O vento trouxe teus passos até minhas mercadorias. '
@@ -179,18 +194,32 @@ async def responder_ia(mensagem: str, historico: list[dict]) -> tuple[str, list[
 
 async def responder(mensagem: str, historico: list[dict]) -> dict:
     if modo_ia() == 'demonstracao':
-        return {'fala': resposta_demo(mensagem), 'modo': 'demonstracao', 'ferramentas': []}
-    try:
-        fala, ferramentas = await responder_ia(mensagem, historico)
-        return {'fala': fala, 'modo': 'ollama', 'ferramentas': ferramentas}
-    except Exception:
         return {
             'fala': resposta_demo(mensagem),
             'modo': 'demonstracao',
             'ferramentas': [],
-            'aviso': 'O agente Ollama/MCP não respondeu; ...'
         }
 
-import logging
+    try:
+        fala, ferramentas = await responder_ia(mensagem, historico)
+        return {
+            'fala': fala,
+            'modo': 'ollama',
+            'ferramentas': ferramentas,
+        }
+
+    except Exception:
+        logger.exception(
+            'Falha na integração Ollama/MCP; ativando demonstração'
+        )
+        return {
+            'fala': resposta_demo(mensagem),
+            'modo': 'demonstracao',
+            'ferramentas': [],
+            'aviso': (
+                'O agente Ollama/MCP está indisponível. '
+                'Modo demonstração ativado.'
+            ),
+        }
 
 logger = logging.getLogger(__name__)

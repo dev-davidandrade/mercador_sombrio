@@ -25,7 +25,58 @@ async def _teste():
             await sessao.initialize()
             lista = await sessao.list_tools()
             nomes = {f.name for f in lista.tools}
-            assert nomes == {'listar_loja', 'consultar_item', 'consultar_taxa', 'calcular_total'}
+            assert nomes == {
+                'listar_loja',
+                'listar_itens',
+                'listar_locais_entrega',
+                'consultar_item',
+                'consultar_taxa',
+                'calcular_total',
+            }
+
+            grupo = await sessao.call_tool(
+                'listar_itens',
+                {'tipo': 'armas curtas'},
+            )
+            assert not grupo.isError
+
+            dados_grupo = grupo.structuredContent
+            if dados_grupo is None:
+                dados_grupo = json.loads(grupo.content[0].text)
+
+            assert {
+                item['id'] for item in dados_grupo['itens']
+            } == {'adaga', 'machado'}
+
+            laminas = await sessao.call_tool(
+                'listar_itens',
+                {'tipo': 'lâminas'},
+            )
+            assert not laminas.isError
+
+            dados_laminas = laminas.structuredContent
+            if dados_laminas is None:
+                dados_laminas = json.loads(laminas.content[0].text)
+
+            assert {
+                item['id'] for item in dados_laminas['itens']
+            } == {
+                'espada', 'espada longa', 'adaga',
+                'machado', 'foice amaldicoada',
+            }
+
+            loja = await sessao.call_tool('listar_loja', {})
+            assert not loja.isError
+
+            dados_loja = loja.structuredContent
+            if dados_loja is None:
+                dados_loja = json.loads(loja.content[0].text)
+
+            assert dados_loja['categorias'] == [
+                'armas', 'municoes', 'armaduras',
+                'pocoes', 'magia', 'utilidades',
+            ]
+
             item = await sessao.call_tool('consultar_item', {'nome_item': 'poção de vida'})
             assert not item.isError
             dados = item.structuredContent

@@ -69,7 +69,15 @@ def test_reiniciar_restabelece_dados(client):
 def test_modo_basico_identificado(client):
     status=client.get('/api/saude').json()
     assert status['modo_ia']=='demonstracao'
-    assert status['ferramentas_mcp']==['listar_loja','consultar_item','consultar_taxa','calcular_total']
+    assert set(status['ferramentas_mcp']) == {
+        'listar_loja',
+        'listar_itens',
+        'listar_locais_entrega',
+        'consultar_item',
+        'consultar_taxa',
+        'calcular_total',
+    }
+
     r=client.post('/api/chat',json={'mensagem':'Quanto custa uma poção de vida?'})
     assert r.status_code==200
     assert r.json()['modo']=='demonstracao'
