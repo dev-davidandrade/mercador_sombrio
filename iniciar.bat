@@ -12,15 +12,24 @@ if not exist ".venv\Scripts\python.exe" (
   if errorlevel 1 goto erro
 )
 if not exist ".venv\.instalado" (
-  echo [2/3] Instalando dependencias (requer internet)...
+  echo [2/3] Instalando dependencias - requer internet...
   ".venv\Scripts\python.exe" -m pip install -r requirements.txt
   if errorlevel 1 goto erro
   type nul > ".venv\.instalado"
 )
+
+powershell.exe -NoProfile -Command "try { $saude = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/saude' -TimeoutSec 2; if ($saude.status -eq 'online') { exit 0 }; exit 1 } catch { exit 1 }"
+if not errorlevel 1 (
+  echo [3/3] O Mercador Sombrio ja esta funcionando.
+  echo Acesse http://127.0.0.1:8000
+  start "" "http://127.0.0.1:8000"
+  goto fim
+)
+
 echo [3/3] Abrindo Mercador Sombrio...
 echo Acesse http://127.0.0.1:8000
 start "" "http://127.0.0.1:8000"
-".venv\Scripts\python.exe" -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
+".venv\Scripts\python.exe" -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 goto fim
 :erro
 echo Nao foi possivel iniciar. Verifique se Python 3.11+ esta instalado e conectado a internet.
