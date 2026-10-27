@@ -1,18 +1,21 @@
-"""Persistência em SQLite. Uma conta de jogador local para o MVP acadêmico."""
+"""Persistência SQLite da conta local do aventureiro."""
 import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-from backend.catalogo import nome_bonito
+from backend.catalogo import LOJA, nome_bonito
+from backend.desfechos import progresso_desfecho
 from backend.economia import Orcamento, RegraDeNegocio
 
 ROOT = Path(__file__).resolve().parents[1]
-OURO_INICIAL_CENTAVOS = 100_000  # 1.000 moedas
+OURO_INICIAL_CENTAVOS = 100_000  # 1.000 ouros
 
 
 def caminho_banco() -> Path:
-    return Path(os.getenv('DATABASE_PATH', str(ROOT / 'dados' / 'mercador.db'))).resolve()
+    return Path(
+        os.getenv('DATABASE_PATH', str(ROOT / 'dados' / 'mercador.db'))
+    ).resolve()
 
 
 @contextmanager
@@ -61,35 +64,101 @@ def inicializar():
 
 def estado() -> dict:
     with conexao() as db:
-        row = db.execute('SELECT ouro_centavos, nome FROM jogador WHERE id = 1').fetchone()
-        itens = db.execute('SELECT item, quantidade FROM inventario WHERE jogador_id = 1 ORDER BY item').fetchall()
-        compras = db.execute('SELECT COUNT(*) FROM compras WHERE jogador_id = 1').fetchone()[0]
+        jogador = db.execute(
+            'SELECT ouro_centavos, nome FROM jogador WHERE id = 1'
+        ).fetchone()
+        itens = db.execute(
+            'SELECT item, quantidade FROM inventario '
+            'WHERE jogador_id = 1 ORDER BY item'
+        ).fetchall()
+        compras = db.execute(
+            'SELECT item FROM compras WHERE jogador_id = 1'
+        ).fetchall()
+        inventario = [
+            {
+                'item': linha['item'],
+                'nome': nome_bonito(linha['item']),
+                'quantidade': linha['quantidade'],
+            }
+            for linha in itens
+            if linha['item'] in LOJA
+        ]
         return {
-            'nome': row['nome'], 'ouro_centavos': row['ouro_centavos'],
-            'inventario': [dict(item=r['item'], nome=nome_bonito(r['item']), quantidade=r['quantidade']) for r in itens],
-            'compras_realizadas': compras,
+            'nome': jogador['nome'],
+            'ouro_centavos': jogador['ouro_centavos'],
+            'inventario': inventario,
+            'compras_realizadas': sum(
+                1 for compra in compras if compra['item'] in LOJA
+            ),
+            'desfecho': progresso_desfecho(
+                inventario,
+                jogador['ouro_centavos'],
+            ),
         }
 
 
 def comprar(orcamento: Orcamento) -> dict:
-    # Transação atômica: checar saldo, debitar, inserir inventário e histórico juntos.
+    """Debita e registra a mercadoria numa única transação."""
+    resultado = comprar_varios([orcamento])
+    return {
+        'compra_id': resultado['compra_ids'][0],
+        'orcamento': resultado['orcamentos'][0],
+        'estado': resultado['estado'],
+    }
+
+
+def comprar_varios(orcamentos: list[Orcamento]) -> dict:
+    """Debita várias mercadorias atomicamente e devolve a soma oficial."""
+    if not orcamentos:
+        raise RegraDeNegocio('Nenhuma mercadoria foi informada.')
+    total_centavos = sum(item.total_centavos for item in orcamentos)
     with conexao() as db:
         db.execute('BEGIN IMMEDIATE')
         try:
-            saldo = db.execute('SELECT ouro_centavos FROM jogador WHERE id = 1').fetchone()[0]
-            if saldo < orcamento.total_centavos:
-                raise RegraDeNegocio('Ouro insuficiente para concluir esta compra.')
-            db.execute('UPDATE jogador SET ouro_centavos = ouro_centavos - ? WHERE id = 1',
-                       (orcamento.total_centavos,))
-            db.execute('''INSERT INTO inventario(jogador_id,item,quantidade) VALUES (1,?,?)
-                       ON CONFLICT(jogador_id,item) DO UPDATE SET quantidade = quantidade + excluded.quantidade''',
-                       (orcamento.item, orcamento.quantidade))
-            cursor = db.execute('''INSERT INTO compras(jogador_id,item,quantidade,local,subtotal_centavos,taxa_centavos,total_centavos)
-                               VALUES(1,?,?,?,?,?,?)''',
-                               (orcamento.item, orcamento.quantidade, orcamento.local,
-                                orcamento.subtotal_centavos, orcamento.taxa_centavos, orcamento.total_centavos))
+            saldo = db.execute(
+                'SELECT ouro_centavos FROM jogador WHERE id = 1'
+            ).fetchone()[0]
+            if saldo < total_centavos:
+                raise RegraDeNegocio(
+                    'Ouro insuficiente para concluir esta compra.'
+                )
+            db.execute(
+                'UPDATE jogador SET ouro_centavos = ouro_centavos - ? '
+                'WHERE id = 1',
+                (total_centavos,),
+            )
+            ids: list[int] = []
+            for orcamento in orcamentos:
+                db.execute(
+                    '''INSERT INTO inventario(jogador_id,item,quantidade)
+                       VALUES (1,?,?)
+                       ON CONFLICT(jogador_id,item)
+                       DO UPDATE SET quantidade = quantidade + excluded.quantidade''',
+                    (orcamento.item, orcamento.quantidade),
+                )
+                # local e taxa são colunas legadas mantidas para bancos existentes.
+                cursor = db.execute(
+                    '''INSERT INTO compras(
+                           jogador_id,item,quantidade,local,subtotal_centavos,
+                           taxa_centavos,total_centavos
+                       ) VALUES(1,?,?,?,?,?,?)''',
+                    (
+                        orcamento.item,
+                        orcamento.quantidade,
+                        'balcao',
+                        orcamento.subtotal_centavos,
+                        0,
+                        orcamento.total_centavos,
+                    ),
+                )
+                ids.append(cursor.lastrowid)
             db.commit()
-            return {'compra_id': cursor.lastrowid, 'orcamento': orcamento.como_dict(), 'estado': estado()}
+            return {
+                'compra_ids': ids,
+                'orcamentos': [item.como_dict() for item in orcamentos],
+                'total_centavos': total_centavos,
+                'estado': estado(),
+            }
         except Exception:
             db.rollback()
             raise
@@ -101,7 +170,10 @@ def reiniciar():
         try:
             db.execute('DELETE FROM compras')
             db.execute('DELETE FROM inventario')
-            db.execute('UPDATE jogador SET ouro_centavos = ? WHERE id = 1', (OURO_INICIAL_CENTAVOS,))
+            db.execute(
+                'UPDATE jogador SET ouro_centavos = ? WHERE id = 1',
+                (OURO_INICIAL_CENTAVOS,),
+            )
             db.commit()
         except Exception:
             db.rollback()

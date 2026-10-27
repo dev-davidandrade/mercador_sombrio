@@ -1,59 +1,97 @@
-# Arquitetura — Mercador Sombrio v0.1
+# Arquitetura do Mercador Sombrio
 
-## Diagrama
+## Visão geral
 
 ```text
-Navegador / frontend (HTML + CSS + JS + Canvas)
-        │ HTTP / JSON
-        ▼
-FastAPI (backend/main.py)
-   ├── /api/loja ───────────────> catalogo.py (LOJA + TAXAS originais)
-   ├── /api/estado ─────────────> SQLite (banco.py)
-   ├── /api/orcamentos ─────────> economia.py (valores em centavos)
-   ├── /api/compras ────────────> banco.py (BEGIN IMMEDIATE + COMMIT/ROLLBACK)
-   └── /api/chat ───────────────> agente.py
-                  ├── sem chave: diálogo básico (indicado como demo)
-                  └── Ollama configurado: Ollama AsyncClient
-                        │ ferramentas descobertas MCP
-                        ▼
-                 MCP ClientSession (stdio)
-                        │ inicia subprocesso Python
-                        ▼
-              backend.servidor_sombrio
-                   ├── listar_loja
-                   ├── consultar_item
-                   ├── consultar_taxa
-                   └── calcular_total
+Navegador
+  ├── catálogo com 47 mercadorias
+  ├── bolsa e saldo
+  ├── botão de destino e slideshow final
+  └── diálogo
+         │ HTTP/JSON
+         ▼
+FastAPI
+  ├── catálogo e orçamento
+  ├── compra transacional no balcão
+  ├── estado do jogador
+  ├── resolvedor determinístico de desfechos
+  └── agente Ollama
+         │ MCP por stdio
+         ▼
+Mercador Sombrio
+  ├── listar_mercadorias
+  ├── consultar_item
+  └── comprar_item
+         │
+         ▼
+SQLite
+  ├── saldo
+  ├── inventário
+  └── histórico de compras
 ```
 
-## Modelo de dados
+## Fonte única do catálogo
 
-- `jogador(id, nome, ouro_centavos)`: um jogador local com 100.000 centésimos de ouro (1.000 moedas).
-- `inventario(jogador_id, item, quantidade)`: quantidades acumuladas por item.
-- `compras(id, jogador_id, item, quantidade, local, subtotal_centavos, taxa_centavos, total_centavos, criado_em)`: histórico de transações.
+`backend/catalogo.py` contém 47 mercadorias, preços e a relação entre item e categoria. O frontend recebe esses dados de `GET /api/loja`; não mantém preços próprios.
 
-Todos os valores monetários persistidos são inteiros. O catálogo original utiliza floats; eles são convertidos **via `Decimal(str(valor))`** uma única vez antes dos cálculos para evitar problemas de precisão binária.
+As categorias são:
 
-## Garantias
+- Armas
+- Munições
+- Armaduras
+- Poções e Venenos
+- Magia e Raridades
+- Utilidades
 
-1. A IA não possui uma ferramenta para comprar: somente as 4 ferramentas originais de leitura/cálculo são expostas via MCP.
-2. O frontend não envia preços oficiais ou saldos: o backend recalcula valores usando seu catálogo.
-3. A compra usa `BEGIN IMMEDIATE` e atualiza ouro, inventário e histórico numa transação indivisível.
-4. Operação inválida ou saldo insuficiente cancela a transação.
-5. Chaves de API só são lidas pelo backend a partir do `.env`; nunca entram no JavaScript.
-6. O modo básico é **claramente identificado**, sem fingir que o modelo ou o MCP responderam.
+Cada mercadoria pertence exatamente a uma categoria.
 
-## Restrições do MVP
+## Compra
 
-- Single-player, sem autenticação/sessões.
-- Compras simuladas com ouro fictício.
-- `.env` e `.db` ignorados pelo Git.
-- Ferramentas MCP só estão ativas com Ollama funcionando; CRUD da aplicação independe do modelo.
-- API funciona localmente em `127.0.0.1`; não publicar assim diretamente na internet.
+A compra pode começar no botão do catálogo, em `POST /api/compras`, ou por uma intenção clara no chat. Em todos os casos o servidor:
 
-## O que testar depois em uma máquina com dependências completas
+1. normaliza o nome da mercadoria;
+2. rejeita itens que não pertencem ao catálogo;
+3. recalcula o preço a partir da fonte oficial;
+4. abre uma transação SQLite;
+5. verifica o saldo;
+6. debita e adiciona ao inventário de forma atômica.
 
-- Chamada real de `/api/chat` em Ollama Cloud e com Ollama local, verificando retorno de tool calling.
-- `session.list_tools()` retornando as quatro ferramentas e `call_tool()` com os esquemas esperados.
-- Windows, Python 3.11+, instância local SQLite persistente, layout mobile.
-- Redução de movimento, navegação por teclado e contraste visual.
+Se o saldo for insuficiente, a transação não debita nem adiciona itens.
+
+Pedidos locais com várias mercadorias são calculados e debitados numa única
+transação. Ou todas entram no inventário, ou nenhuma delas é cobrada.
+
+## Desfechos
+
+`backend/desfechos.py` libera o resultado quando o jogador possui oito tipos
+distintos de mercadoria ou zera o saldo. Combinações especiais são avaliadas
+em ordem. A última regra é sempre `A Batalha sem Profecia`, garantindo que
+qualquer preparação válida produza uma história.
+
+`GET /api/desfecho` valida novamente o progresso no servidor e devolve título,
+texto, tom e cenas. O frontend apenas apresenta esse resultado com slideshow e
+texto progressivo; ele não decide qual final o jogador recebeu.
+
+## Venda no balcão
+
+O projeto não possui ferramentas, campos ou cálculos de entrega. Destino e frete não fazem parte da API. Se o usuário pedir entrega no diálogo, o mercador explica que as vendas acontecem somente no balcão e não executa compra.
+
+As colunas internas `local` e `taxa_centavos` da tabela histórica são preservadas apenas para compatibilidade com bancos SQLite criados pela versão anterior. Novas compras gravam `balcao` e taxa zero; esses campos não são expostos ao cliente.
+
+## Agente e MCP
+
+O agente possui uma lista fechada com três ferramentas permitidas: `listar_mercadorias`, `consultar_item` e `comprar_item`. O prompt determina que perguntas não sejam confundidas com compras e que somente o retorno confirmado da ferramenta autorize afirmar que uma venda ocorreu.
+
+Sem `OLLAMA_API_KEY`, o interpretador local mantém as mesmas regras essenciais para demonstração e testes.
+
+## Persistência
+
+`backend/banco.py` usa SQLite. Um banco novo começa com 100.000 centésimos, equivalentes a 1.000 ouros. Valores monetários são inteiros em centésimos para evitar erros de ponto flutuante.
+
+## Segurança
+
+- A chave do Ollama fica apenas no `.env` ignorado.
+- Preços enviados pelo cliente são ignorados.
+- A IA não escreve diretamente no banco.
+- A compra é validada e executada pela camada de domínio.
+- O histórico enviado ao modelo é limitado.

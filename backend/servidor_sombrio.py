@@ -1,181 +1,116 @@
-"""Servidor MCP original, separado do agente e do banco de dados.
-
-Iniciado pelo cliente MCP usando transporte stdio. Não execute manualmente em um terminal
-para interagir com ele: o processo fica esperando mensagens do protocolo.
-"""
-import math
+"""Servidor MCP do Mercador Sombrio, sem ferramentas de entrega."""
 from typing import Any
-from mcp.server.fastmcp import FastMCP
-from pydantic import StrictInt, StrictFloat
 
+from mcp.server.fastmcp import FastMCP
+from pydantic import StrictInt
+
+from backend import banco
 from backend.catalogo import (
     CATEGORIAS,
     CATEGORIA_POR_ITEM,
     LOJA,
-    TAXAS,
+    NOMES_CATEGORIAS,
     nome_bonito,
     normalizar,
 )
+from backend.economia import RegraDeNegocio, calcular_orcamento
 
-mcp = FastMCP('Vendedor Sombrio')
+mcp = FastMCP('Mercador Sombrio')
+
+ALIASES_CATEGORIAS = {
+    'arma': 'armas', 'armas': 'armas',
+    'municao': 'municoes', 'municoes': 'municoes',
+    'armadura': 'armaduras', 'armaduras': 'armaduras',
+    'equipamento': 'armaduras', 'equipamentos': 'armaduras',
+    'pocao': 'pocoes', 'pocoes': 'pocoes',
+    'veneno': 'pocoes', 'venenos': 'pocoes',
+    'magia': 'magia', 'magico': 'magia', 'magicos': 'magia',
+    'raridade': 'magia', 'raridades': 'magia',
+    'utilidade': 'utilidades', 'utilidades': 'utilidades',
+}
 
 
-@mcp.tool()
-def listar_loja() -> dict[str, Any]:
-    """Lista todas as categorias, mercadorias e destinos da loja.
-
-    Use para perguntas gerais como:
-    'Quais mercadorias você tem?', 'Quais itens você vende?'
-    ou 'Quais categorias existem?'.
-    """
+def _dados_item(nome: str) -> dict[str, Any]:
+    categoria = CATEGORIA_POR_ITEM[nome]
     return {
-        'categorias': list(CATEGORIAS),
-        'itens': LOJA,
-        'locais de entrega': TAXAS,
+        'id': nome,
+        'nome': nome_bonito(nome),
+        'categoria': categoria,
+        'categoria_nome': NOMES_CATEGORIAS[categoria],
+        'preco_ouros': LOJA[nome],
     }
 
 
 @mcp.tool()
-def listar_itens(tipo: str = "") -> dict[str, Any]:
-    """Lista mercadorias disponíveis e seus preços, podendo filtrar por categoria ou nome.
-    
-    Filtros disponíveis: armas, armas curtas, armas longas,
-    armas de longo alcance, armas magicas, espadas, laminas,
-    municao, bombas, pocoes, armaduras, pergaminhos e outros itens.
-    Sem filtro, retorna todas as mercadorias.
+def listar_mercadorias(categoria: str = "") -> dict[str, Any]:
+    """Lista mercadorias e preços, opcionalmente filtrados por categoria.
+
+    Categorias: armas, munições, armaduras, poções e venenos,
+    magia e raridades, e utilidades.
     """
-    categorias = {
-        'arma': 'armas',
-        'armas': 'armas',
-        'armadura': 'armaduras',
-        'armaduras': 'armaduras',
-        'equipamento': 'armaduras',
-        'equipamentos': 'armaduras',
-        'pocao': 'pocoes',
-        'pocoes': 'pocoes',
-        'magia': 'magia',
-        'magico': 'magia',
-        'magicos': 'magia',
-        'municao': 'municoes',
-        'municoes': 'municoes',
-        'utilidade': 'utilidades',
-        'utilidades': 'utilidades',
-        'outro item': 'utilidades',
-        'outros itens': 'utilidades',
-    }
-    grupos = {
-        'armas curtas': {'adaga', 'machado'},
-        'armas longas': {'lanca', 'martelo de guerra'},
-        'armas de longo alcance': {'arco', 'besta'},
-        'armas magicas': {'cajado', 'foice amaldicoada'},
-        'lamina': {
-            'espada', 'espada longa', 'adaga',
-            'machado', 'foice amaldicoada',
-        },
-        'laminas': {
-            'espada', 'espada longa', 'adaga',
-            'machado', 'foice amaldicoada',
-        },
-        'bombas': {'bomba', 'bomba de fumaca'},
-    }
-
-    filtro = normalizar(tipo)
-
-    if not filtro:
-        encontrados = list(LOJA)
-
-    elif filtro in categorias:
-        categoria = categorias[filtro]
-        encontrados = [
-            nome for nome in LOJA
-            if CATEGORIA_POR_ITEM[nome] == categoria
-        ]
-
-    elif filtro in grupos:
-        encontrados = [
-            nome for nome in LOJA
-            if nome in grupos[filtro]
-        ]
-
-    else:
-        termo = filtro[:-1] if filtro.endswith('s') else filtro
-        encontrados = [
-            nome for nome in LOJA
-            if termo in nome
-        ]
-
-    itens = [
-        {
-            'id': nome,
-            'nome': nome_bonito(nome),
-            'categoria': CATEGORIA_POR_ITEM[nome],
-            'preco_ouro': LOJA[nome]
+    filtro = normalizar(categoria)
+    categoria_id = ALIASES_CATEGORIAS.get(filtro) if filtro else None
+    if filtro and categoria_id is None:
+        return {
+            'encontrada': False,
+            'erro': 'Categoria de mercadoria desconhecida.',
+            'categorias': [
+                {'id': chave, 'nome': titulo}
+                for chave, titulo in NOMES_CATEGORIAS.items()
+            ],
+            'mercadorias': [],
         }
-        for nome in encontrados
-    ]
 
+    nomes = CATEGORIAS[categoria_id] if categoria_id else list(LOJA)
     return {
-        'filtro': filtro or 'todos',
-        'quantidade': len(itens),
-        'itens': itens,
+        'encontrada': True,
+        'filtro': categoria_id or 'todas',
+        'categorias': [
+            {'id': chave, 'nome': titulo}
+            for chave, titulo in NOMES_CATEGORIAS.items()
+        ],
+        'quantidade': len(nomes),
+        'mercadorias': [_dados_item(nome) for nome in nomes],
     }
 
 
 @mcp.tool()
 def consultar_item(nome_item: str) -> dict[str, Any]:
-    """Consulta o preço de um item. Use o nome do item; se não souber, use listar_loja."""
+    """Consulta existência, categoria e preço oficial de uma mercadoria."""
     if not nome_item.strip():
-        raise ValueError('Informe o nome de um item')
+        raise ValueError('Informe o nome de uma mercadoria')
     nome = normalizar(nome_item)
     if nome not in LOJA:
         return {'encontrado': False, 'item': nome}
-    return {'encontrado': True, 'item': nome, 'preco': LOJA[nome]}
+    return {'encontrado': True, **_dados_item(nome)}
 
 
 @mcp.tool()
-def consultar_taxa(nome_local: str) -> dict[str, Any]:
-    """Consulta a taxa de entrega de um local. Se não souber, use listar_loja."""
-    if not nome_local.strip():
-        raise ValueError('Informe o nome de um local')
-    local = normalizar(nome_local)
-    if local not in TAXAS:
-        return {'encontrado': False, 'local': local}
-    return {'encontrado': True, 'local': local, 'taxa': TAXAS[local]}
+def comprar_item(nome_item: str, quantidade: StrictInt = 1) -> dict[str, Any]:
+    """Compra uma mercadoria imediatamente no balcão.
 
-@mcp.tool()
-def listar_locais_entrega() -> dict[str, Any]:
-    """Lista todos os destinos de entrega disponíveis.
-
-    Retorna cada local e sua respectiva taxa em ouro.
-    Use quando o jogador perguntar para onde o
-    mercador entrega, quais destinos existem ou
-    quais são os preços de entrega.
+    O preço é sempre recalculado no servidor. A transação só debita os ouros
+    e atualiza o inventário quando há saldo suficiente.
     """
-
-    locais = [
-        {
-            'id': nome,
-            'nome': nome_bonito(nome),
-            'taxa_ouro': taxa
+    banco.inicializar()
+    try:
+        orcamento = calcular_orcamento(nome_item, quantidade)
+        resultado = banco.comprar(orcamento)
+        return {
+            'sucesso': True,
+            'mensagem': (
+                f'{quantidade} × {nome_bonito(orcamento.item)} comprado por '
+                f'{orcamento.total_centavos / 100:g} ouros.'
+            ),
+            **resultado,
         }
-        for nome, taxa in TAXAS.items()
-    ]
+    except RegraDeNegocio as erro:
+        return {
+            'sucesso': False,
+            'erro': str(erro),
+            'estado': banco.estado(),
+        }
 
-    return {
-        'quantidade': len(locais),
-        'locais': locais
-    }
-
-
-@mcp.tool()
-def calcular_total(quantidade: StrictInt, preco: StrictFloat, frete: StrictFloat) -> float:
-    """Calcula quantidade (1 a 1000) vezes preço unitário (0 a 5000), mais taxa de entrega (0 a 1000)."""
-    if type(quantidade) is not int or not 1 <= quantidade <= 1000:
-        raise ValueError('Quantidade inválida')
-    for valor, teto in [(preco, 5000), (frete, 1000)]:
-        if type(valor) not in (int, float) or not math.isfinite(valor) or not 0 <= valor <= teto:
-            raise ValueError('Preço ou taxa inválida')
-    return round(quantidade * preco + frete, 2)
 
 if __name__ == '__main__':
     mcp.run(transport='stdio')

@@ -2,26 +2,70 @@
 
 const $ = (id) => document.getElementById(id);
 const dom = Object.fromEntries([
-  'scene', 'merchantSprite', 'merchantButton', 'merchantSpeech', 'dialogue', 'closeDialogue',
+  'world', 'scene', 'rainScene', 'merchantArea', 'merchantSprite', 'merchantButton', 'merchantSpeech', 'dialogue', 'closeDialogue',
   'chatForm', 'chatInput', 'sendButton', 'messages', 'chatModeLabel',
   'storePanel', 'bagPanel', 'shade', 'bagButton', 'showStore', 'quickStore', 'quickBag', 'quickAsk',
   'hudGold', 'bagGold', 'categories', 'itemSearch', 'catalogueList', 'inventoryList', 'itemCount',
   'purchaseCount', 'connectionDot', 'connectionLabel', 'purchaseModal', 'purchaseItemName',
-  'purchaseForm', 'purchaseQuantity', 'purchaseDestination', 'unitPrice', 'subTotal',
-  'deliveryPrice', 'totalPrice', 'purchaseError', 'confirmPurchase', 'closePurchase',
+  'purchaseForm', 'purchaseQuantity', 'unitPrice', 'subTotal', 'totalPrice',
+  'purchaseError', 'confirmPurchase', 'closePurchase',
   'cancelPurchase', 'resetButton', 'motionButton', 'toast',
+  'destinyGate', 'destinyProgress', 'resultButton', 'endingScreen',
+  'endingSlides', 'endingTitle', 'endingSubtitle', 'endingStory', 'tryAgainButton',
 ].map(id => [id, $(id)]));
 
 const CATEGORIES = {
   todas:'Todas', armas:'Armas', municoes:'Munições', armaduras:'Armaduras',
-  pocoes:'Poções', magia:'Magia', utilidades:'Utilidades',
+  pocoes:'Poções e Venenos', magia:'Magia e Raridades', utilidades:'Utilidades',
 };
-const GLYPHS = {armas:'⚔', municoes:'➶', armaduras:'♜', pocoes:'⚗', magia:'✧', utilidades:'◈'};
-let shop = {itens:[], destinos:[]};
-let player = {ouro_centavos:100000, inventario:[], compras_realizadas:0};
+const GLYPHS = {
+  armas:'⚔', municoes:'➶', armaduras:'◆', pocoes:'⚗', magia:'✧', utilidades:'◈',
+};
+const ICON_ITEMS = {
+  armas: [
+    'espada', 'espada longa', 'adaga', 'machado',
+    'lanca', 'martelo de guerra', 'arco', 'besta',
+    'cajado', 'foice amaldicoada',
+  ],
+  municoes: [
+    'flechas', 'flechas de fogo', 'virotes', 'facas de arremesso',
+    'bomba', 'bomba de fumaca',
+  ],
+  armaduras: [
+    'escudo', 'escudo de torre', 'capacete', 'espaldeiras',
+    'armadura', 'armadura de couro', 'cota de malha', 'manoplas',
+    'botas', 'capa das sombras',
+  ],
+  pocoes: [
+    'pocao de vida', 'pocao de mana', 'pocao de forca',
+    'pocao de invisibilidade', 'antidoto', 'veneno',
+    'veneno paralisante', 'elixir da juventude',
+  ],
+  magia: [
+    'pergaminho de teleporte', 'anel de protecao', 'amuleto sombrio',
+    'grimorio proibido', 'olho de dragao', 'alma engarrafada',
+  ],
+  utilidades: [
+    'tocha', 'corda', 'mochila', 'mapa antigo',
+    'racao de viagem', 'lanterna', 'gazua',
+  ],
+};
+const ITEM_ICON = new Map(
+  Object.entries(ICON_ITEMS).flatMap(([categoria, ids]) =>
+    ids.map((id, index) => [id, {categoria, index}])
+  )
+);
+let shop = {itens:[], categorias:[]};
+let player = {
+  ouro_centavos:100000,
+  inventario:[],
+  compras_realizadas:0,
+  desfecho:{disponivel:false,tipos_escolhidos:0,limite_tipos:8,motivo:null},
+};
 let category = 'todas', selectedItem = null, quote = null, quoteRequest = 0;
 let history = [], busy = false, previousFocus = null, toastTimeout;
 let reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+document.documentElement.classList.toggle('reduce-motion',reduceMotion);
 
 const money = cents => new Intl.NumberFormat('pt-BR', {minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits:2}).format(cents / 100);
 
@@ -46,6 +90,22 @@ function el(tag, cls, text) {
   if (text !== undefined) x.textContent = text;
   return x;
 }
+function itemIcon(item, extraClass='') {
+  const icon = el('span', `item-icon ${extraClass}`.trim());
+  const location = ITEM_ICON.get(item.id || item.item);
+  icon.setAttribute('aria-hidden', 'true');
+  if (!location) {
+    icon.classList.add('item-icon-fallback');
+    icon.textContent = GLYPHS[item.categoria] || '◈';
+    return icon;
+  }
+  const column = location.index % 4;
+  const row = Math.floor(location.index / 4);
+  icon.style.setProperty('--icon-sheet', `url("/static/assets/items/${location.categoria}.png?v=catalog-4")`);
+  icon.style.setProperty('--icon-x', `${column * 100 / 3}%`);
+  icon.style.setProperty('--icon-y', `${row * 100 / 3}%`);
+  return icon;
+}
 function notify(message) {
   clearTimeout(toastTimeout);
   dom.toast.textContent = message;
@@ -58,6 +118,12 @@ function renderPlayer() {
   dom.bagGold.textContent = money(player.ouro_centavos);
   dom.itemCount.textContent = player.inventario.reduce((total,i) => total+i.quantidade, 0) + ' ITENS';
   dom.purchaseCount.textContent = `${player.compras_realizadas} COMPRAS REGISTRADAS`;
+  const fate=player.desfecho || {disponivel:false,tipos_escolhidos:0,limite_tipos:8};
+  dom.destinyGate.hidden=!fate.disponivel;
+  dom.world.classList.toggle('fate-ready',fate.disponivel);
+  dom.destinyProgress.textContent=fate.motivo==='ouro_esgotado'
+    ? 'A bolsa está vazia. A batalha não pode mais esperar.'
+    : `${fate.tipos_escolhidos} ESCOLHAS SELARAM O DESTINO`;
   dom.inventoryList.replaceChildren();
   if (!player.inventario.length) {
     dom.inventoryList.append(el('p','empty-state','Tua bolsa ainda está vazia, aventureiro.\nO próximo tesouro aguarda além das sombras.'));
@@ -65,7 +131,9 @@ function renderPlayer() {
   }
   for (const item of player.inventario) {
     const row = el('div','inventory-item');
-    row.append(el('span','',item.nome), el('span','quantity',`× ${item.quantidade}`));
+    const identity = el('div','inventory-item-main');
+    identity.append(itemIcon(item, 'inventory-item-icon'), el('span','inventory-item-name',item.nome));
+    row.append(identity, el('span','quantity',`× ${item.quantidade}`));
     dom.inventoryList.append(row);
   }
 }
@@ -88,7 +156,7 @@ function renderShop() {
   for (const item of items) {
     const card = el('article','catalogue-item');
     const main = el('div','catalogue-item-main');
-    main.append(el('div','item-glyph',GLYPHS[item.categoria] || '◈'));
+    main.append(itemIcon(item, 'catalogue-item-icon'));
     const text = el('div','item-text');
     text.append(el('div','item-name',item.nome), el('div','catalogue-sub',CATEGORIES[item.categoria].toUpperCase()));
     main.append(text);
@@ -145,12 +213,19 @@ async function sendMessage(text) {
   addMessage('user',text);
   dom.chatInput.value='';busy=true;dom.sendButton.disabled=true;
   const oldHistory = history.slice(-10);
-  addMessage('assistant','O mercador consulta seus pergaminhos...');
+  addMessage('assistant','O mercador confere o catálogo...');
   const pending = dom.messages.lastElementChild;
   try {
     const result = await post('chat',{mensagem:text,historico:oldHistory});
     pending.remove();
     addMessage('assistant',result.fala, result.modo==='ollama' ? `IA ATIVA · ${result.ferramentas.length} CHAMADAS MCP` : 'DIÁLOGO BÁSICO · SEM IA');
+    if (result.estado) {
+      player=result.estado;
+      renderPlayer();
+    }
+    if (result.compra_realizada) {
+      notify('✦ Compra confirmada! O saldo foi atualizado e a mercadoria está na tua bolsa.');
+    }
     if (result.aviso) notify(result.aviso);
     history.push({role:'user',content:text},{role:'assistant',content:result.fala});
     history=history.slice(-10);
@@ -161,19 +236,10 @@ async function sendMessage(text) {
   } finally {busy=false;dom.sendButton.disabled=false;dom.chatInput.focus();}
 }
 
-function updatePurchaseDestination() {
-  dom.purchaseDestination.replaceChildren();
-  for (const dst of shop.destinos) {
-    const opt=document.createElement('option');opt.value=dst.id;opt.textContent=`${dst.nome} · ✦ ${money(dst.taxa_centavos)}`;
-    dom.purchaseDestination.append(opt);
-  }
-  dom.purchaseDestination.value='vila';
-}
 function openPurchase(item) {
   selectedItem=item;quote=null;
   dom.purchaseItemName.textContent=item.nome;
   dom.purchaseQuantity.value='1';
-  updatePurchaseDestination();
   dom.purchaseModal.hidden=false;
   dom.purchaseError.hidden=true;
   recalculate();
@@ -184,16 +250,15 @@ async function recalculate() {
   if (!selectedItem) return;
   const req=++quoteRequest;
   quote=null;dom.confirmPurchase.disabled=true;dom.purchaseError.hidden=true;
-  for (const id of ['unitPrice','subTotal','deliveryPrice','totalPrice']) dom[id].textContent='—';
+  for (const id of ['unitPrice','subTotal','totalPrice']) dom[id].textContent='—';
   try {
     const result=await post('orcamentos',{
-      item:selectedItem.id, quantidade:Number(dom.purchaseQuantity.value), local:dom.purchaseDestination.value,
+      item:selectedItem.id, quantidade:Number(dom.purchaseQuantity.value),
     });
     if (req!==quoteRequest) return;
     quote=result;
     dom.unitPrice.textContent='✦ '+money(result.preco_unitario_centavos);
     dom.subTotal.textContent='✦ '+money(result.subtotal_centavos);
-    dom.deliveryPrice.textContent='✦ '+money(result.taxa_centavos);
     dom.totalPrice.textContent='✦ '+money(result.total_centavos);
     dom.confirmPurchase.disabled=result.total_centavos>player.ouro_centavos;
     if (result.total_centavos>player.ouro_centavos) {
@@ -210,26 +275,25 @@ async function confirmPurchase(event) {
   dom.confirmPurchase.disabled=true;
   try {
     const result=await post('compras',{
-      item:quote.item, quantidade:quote.quantidade, local:quote.local,
+      item:quote.item, quantidade:quote.quantidade,
     });
     player=result.estado;renderPlayer();
     const itemName=selectedItem.nome;
     closePurchase();openPanel('bag');
     notify(`✦ Negócio fechado! ${result.orcamento.quantidade} × ${itemName} agora faz parte da tua bolsa.`);
-    addMessage('assistant',`Está feito, aventureiro. ${result.orcamento.quantidade} × ${itemName} agora te pertence. Eu mesmo farei a entrega até ${result.orcamento.local}...`,'COMPRA CONFIRMADA PELO SISTEMA');
+    addMessage('assistant',`Está feito, aventureiro. ${result.orcamento.quantidade} × ${itemName} agora te pertence, e os ouros já foram descontados.`,'COMPRA CONFIRMADA PELO SISTEMA');
   } catch(error) {dom.purchaseError.textContent=error.message;dom.purchaseError.hidden=false;}
   finally {if (selectedItem) dom.confirmPurchase.disabled=false;}
 }
 
-// ========= Cena pixel art: desenhada em Canvas, sem dependência de imagens externas =========
+// ========= Cena do castelo, chuva em alta resolução e mercadora animada =========
 const canvas=dom.scene,ctx=canvas.getContext('2d',{alpha:false});
 const W=480,H=270;
 const pix=(x,y,w,h,c)=>{ctx.fillStyle=c;ctx.fillRect(Math.floor(x),Math.floor(y),Math.ceil(w),Math.ceil(h));};
 let seed=721;
 const rnd=()=>{seed=(seed*16807)%2147483647;return (seed-1)/2147483646;};
-let stars=[], rain=[], towers=[];
+let stars=[], towers=[];
 for(let i=0;i<100;i++) stars.push({x:Math.floor(rnd()*W),y:Math.floor(rnd()*115),l:rnd()});
-for(let i=0;i<115;i++) rain.push({x:rnd()*W,y:rnd()*H,s:1.2+rnd()*3.2,l:2+rnd()*6});
 for(let i=0;i<65;i++) towers.push({x:i*9-12,w:4+Math.floor(rnd()*7),h:6+rnd()*24});
 const lightFromStorm = (time)=> !reduceMotion && ((time%17000>14850 && time%17000<15000) || (time%17000>15130 && time%17000<15190));
 function drawCastle(time) {
@@ -298,16 +362,84 @@ function drawCastle(time) {
     ctx.strokeStyle='#ffffff';ctx.lineWidth=1;ctx.stroke();
   }
 }
-function drawRain(time){
-  if(reduceMotion) return;
-  ctx.strokeStyle='#96a3cb6d';ctx.lineWidth=.55;ctx.beginPath();
-  for(const r of rain){const x=(r.x+(time*.026*r.s))%W;const y=(r.y+(time*.048*r.s))%H;ctx.moveTo(x,y);ctx.lineTo(x+1.5,y+r.l);}
-  ctx.stroke();
+const rainCanvas=dom.rainScene,rainCtx=rainCanvas.getContext('2d');
+let rainWidth=1,rainHeight=1,rainDrops=[],rainSplashes=[],rainDpr=1;
+let rainSeed=9137;
+const rainRandom=()=>{rainSeed=(rainSeed*16807)%2147483647;return (rainSeed-1)/2147483646;};
+const RAIN_LAYERS=[
+  {speed:.24,wind:.035,length:13,width:.55,alpha:.19,color:'173,190,224'},
+  {speed:.43,wind:.062,length:22,width:.85,alpha:.29,color:'185,203,236'},
+  {speed:.72,wind:.095,length:35,width:1.25,alpha:.42,color:'205,218,246'},
+];
+function resizeRain(){
+  const rect=dom.world.getBoundingClientRect();
+  rainWidth=Math.max(1,rect.width);rainHeight=Math.max(1,rect.height);
+  rainDpr=Math.min(window.devicePixelRatio||1,1.75);
+  rainCanvas.width=Math.round(rainWidth*rainDpr);
+  rainCanvas.height=Math.round(rainHeight*rainDpr);
+  rainCtx.setTransform(rainDpr,0,0,rainDpr,0,0);
+  rainSeed=9137;
+  const amount=Math.min(300,Math.max(130,Math.round(rainWidth*rainHeight/5200)));
+  rainDrops=Array.from({length:amount},(_,index)=>({
+    layer:index%3,
+    x:rainRandom()*(rainWidth+360)-180,
+    y:rainRandom()*(rainHeight+260)-130,
+    drift:.78+rainRandom()*.48,
+    speed:.78+rainRandom()*.5,
+  }));
+  rainSplashes=Array.from({length:44},()=>({
+    x:rainRandom()*rainWidth,
+    y:rainHeight*(.72+rainRandom()*.25),
+    offset:rainRandom()*1400,
+    duration:720+rainRandom()*760,
+    size:4+rainRandom()*9,
+  }));
 }
+function drawRain(time){
+  rainCtx.clearRect(0,0,rainWidth,rainHeight);
+  if(reduceMotion)return;
+  rainCtx.save();rainCtx.lineCap='round';
+  for(let layerIndex=0;layerIndex<RAIN_LAYERS.length;layerIndex++){
+    const layer=RAIN_LAYERS[layerIndex];
+    rainCtx.beginPath();
+    for(const drop of rainDrops){
+      if(drop.layer!==layerIndex)continue;
+      const wrapW=rainWidth+360,wrapH=rainHeight+260;
+      const x=((drop.x+time*layer.wind*drop.drift+180)%wrapW)-180;
+      const y=((drop.y+time*layer.speed*drop.speed+130)%wrapH)-130;
+      rainCtx.moveTo(x,y);
+      rainCtx.lineTo(x+layer.length*.22,y+layer.length);
+    }
+    rainCtx.strokeStyle=`rgba(${layer.color},${layer.alpha})`;
+    rainCtx.lineWidth=layer.width;rainCtx.stroke();
+  }
+  for(const splash of rainSplashes){
+    const phase=((time+splash.offset)%splash.duration)/splash.duration;
+    if(phase>.2)continue;
+    const expansion=phase/.2;
+    rainCtx.beginPath();
+    rainCtx.ellipse(splash.x,splash.y,splash.size*expansion,1.5*expansion,0,Math.PI,Math.PI*2);
+    rainCtx.strokeStyle=`rgba(190,207,238,${(1-expansion)*.34})`;
+    rainCtx.lineWidth=.7;rainCtx.stroke();
+  }
+  for(let band=0;band<2;band++){
+    const y=rainHeight*(.58+band*.22)+Math.sin(time/2600+band)*9;
+    const gradient=rainCtx.createLinearGradient(0,y,rainWidth,y+42);
+    gradient.addColorStop(0,'rgba(80,91,132,0)');
+    gradient.addColorStop(.5,`rgba(105,116,158,${.035+band*.018})`);
+    gradient.addColorStop(1,'rgba(80,91,132,0)');
+    rainCtx.fillStyle=gradient;rainCtx.fillRect(0,y,rainWidth,46);
+  }
+  rainCtx.restore();
+}
+resizeRain();
+window.addEventListener('resize',resizeRain,{passive:true});
 const sprite=dom.merchantSprite.getContext('2d');
 function sp(x,y,w,h,color) {sprite.fillStyle=color;sprite.fillRect(x,y,w,h);}
-function drawMerchant(time){
-  sprite.clearRect(0,0,112,128);sprite.imageSmoothingEnabled=false;
+function drawMerchantFallback(time){
+  const canvasWidth=sprite.canvas.width,canvasHeight=sprite.canvas.height;
+  sprite.clearRect(0,0,canvasWidth,canvasHeight);sprite.imageSmoothingEnabled=false;
+  sprite.save();sprite.scale(canvasWidth/112,canvasHeight/128);
   const bob=reduceMotion?0:Math.round(Math.sin(time/480)*1.6);
   sprite.save();sprite.translate(0,bob);
   // shadow, lantern glow
@@ -341,14 +473,134 @@ function drawMerchant(time){
   sp(13,20,4,99,'#49352f');sp(14,14,2,9,'#75523c');sp(8,9,15,9,'#423355');sp(10,7,11,7,'#7659ac');sp(12,5,7,6,'#b38dec');sp(15,9,3,3,'#f7d8ff');
   // shimmer particles
   if(!reduceMotion){let tw=Math.floor(time/420)%9;sp(6+tw,29,2,2,'#8a76bb');sp(18,2+tw,1,2,'#c5a2ec');}
+  sprite.restore();sprite.restore();
+}
+const merchantSheet=new Image();
+merchantSheet.decoding='async';
+merchantSheet.src='/static/assets/merchant/mercadora-sombria-sprites-v2.png?v=fates-1';
+merchantSheet.addEventListener('load',()=>drawMerchant(performance.now()));
+function drawMerchant(time){
+  if(!merchantSheet.complete||!merchantSheet.naturalWidth){drawMerchantFallback(time);return;}
+  const canvasWidth=sprite.canvas.width,canvasHeight=sprite.canvas.height;
+  sprite.clearRect(0,0,canvasWidth,canvasHeight);sprite.imageSmoothingEnabled=false;
+  const engaged=!dom.dialogue.hidden||dom.merchantArea.matches(':hover');
+  const row=engaged?1:0;
+  const duration=engaged?560:820;
+  const cycle=reduceMotion?0:time/duration;
+  const frame=Math.floor(cycle)%4;
+  const nextFrame=(frame+1)%4;
+  const phase=cycle-Math.floor(cycle);
+  const blendStart=.58;
+  const rawBlend=Math.max(0,Math.min(1,(phase-blendStart)/(1-blendStart)));
+  const blend=rawBlend*rawBlend*(3-2*rawBlend);
+  const sourceWidth=merchantSheet.naturalWidth/4;
+  const sourceHeight=merchantSheet.naturalHeight/2;
+  const drawHeight=canvasHeight-4;
+  const drawWidth=drawHeight*(sourceWidth/sourceHeight);
+  const drawX=(canvasWidth-drawWidth)/2;
+  const bob=reduceMotion?0:Math.sin(time/900)*1.5;
+  const glow=sprite.createRadialGradient(canvasWidth/2,canvasHeight*.54,12,canvasWidth/2,canvasHeight*.54,canvasWidth*.44);
+  glow.addColorStop(0,'rgba(166,124,224,.16)');glow.addColorStop(1,'rgba(80,46,125,0)');
+  sprite.fillStyle=glow;sprite.fillRect(8,10,canvasWidth-16,canvasHeight-14);
+  sprite.save();sprite.translate(0,bob);
+  const paintFrame=(index,alpha)=>{
+    sprite.globalAlpha=alpha;
+    sprite.drawImage(
+      merchantSheet,index*sourceWidth,row*sourceHeight,sourceWidth,sourceHeight,
+      drawX,2,drawWidth,drawHeight
+    );
+  };
+  paintFrame(frame,1-blend);
+  if(blend>0)paintFrame(nextFrame,blend);
+  sprite.globalAlpha=1;
   sprite.restore();
 }
 let lastFrame=0;
 function tick(time) {
-  if(time-lastFrame>44 || reduceMotion) {lastFrame=time;drawCastle(reduceMotion?0:time);drawRain(time);drawMerchant(time);}
+  if(time-lastFrame>44 || reduceMotion) {lastFrame=time;drawMerchant(time);}
+  drawRain(time);
   if(!reduceMotion) requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
+
+let endingRun=0;
+let endingAudio=null;
+let endingFollowText=true;
+function keyboardTick(index){
+  if(reduceMotion||index%3!==0)return;
+  try{
+    endingAudio ??= new (window.AudioContext||window.webkitAudioContext)();
+    const oscillator=endingAudio.createOscillator();
+    const gain=endingAudio.createGain();
+    oscillator.type='square';oscillator.frequency.value=145+((index*17)%45);
+    gain.gain.setValueAtTime(.012,endingAudio.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.0001,endingAudio.currentTime+.025);
+    oscillator.connect(gain);gain.connect(endingAudio.destination);
+    oscillator.start();oscillator.stop(endingAudio.currentTime+.028);
+  }catch{}
+}
+async function typeEnding(paragraphs){
+  const run=++endingRun;
+  const full=paragraphs.join('\n\n');
+  endingFollowText=true;
+  dom.endingStory.textContent='';dom.endingStory.scrollTop=0;dom.endingStory.classList.remove('complete');
+  if(reduceMotion){dom.endingStory.textContent=full;dom.endingStory.classList.add('complete');return;}
+  for(let index=0;index<full.length;index++){
+    if(run!==endingRun)return;
+    dom.endingStory.textContent+=full[index];
+    if(endingFollowText&&index%8===0){
+      dom.endingStory.scrollTop=dom.endingStory.scrollHeight;
+    }
+    keyboardTick(index);
+    const pause='.!?'.includes(full[index])?90:full[index]===','?48:22;
+    await new Promise(resolve=>setTimeout(resolve,pause));
+  }
+  dom.endingStory.classList.add('complete');
+}
+async function revealEnding(){
+  dom.resultButton.disabled=true;
+  try{
+    try{
+      endingAudio ??= new (window.AudioContext||window.webkitAudioContext)();
+      await endingAudio.resume();
+    }catch{}
+    const ending=await api('desfecho');
+    closePanels();dom.dialogue.hidden=true;dom.merchantSpeech.hidden=false;
+    dom.endingSlides.replaceChildren();
+    const slides=ending.slides.slice(0,4);
+    while(slides.length<4)slides.push(slides[slides.length-1]);
+    const slideSeconds=7;
+    const cycleSeconds=slides.length*slideSeconds;
+    for(const [index,url] of slides.entries()){
+      const slide=el('div','ending-slide');
+      slide.style.backgroundImage=`url("${url}")`;
+      slide.style.animationDuration=`${cycleSeconds}s`;
+      slide.style.animationDelay=`${index*slideSeconds}s`;
+      dom.endingSlides.append(slide);
+    }
+    dom.endingTitle.textContent=ending.titulo;
+    dom.endingSubtitle.textContent=ending.subtitulo;
+    dom.tryAgainButton.hidden=true;
+    dom.endingScreen.hidden=false;
+    document.body.style.overflow='hidden';
+    await typeEnding(ending.texto);
+    dom.tryAgainButton.hidden=false;
+    dom.tryAgainButton.focus();
+  }catch(error){notify(error.message);}
+  finally{dom.resultButton.disabled=false;}
+}
+async function restartJourney(){
+  dom.tryAgainButton.disabled=true;endingRun++;
+  try{
+    player=await post('reiniciar',{});
+    history=[];renderPlayer();renderShop();
+    dom.endingScreen.hidden=true;document.body.style.overflow='';
+    dom.endingStory.textContent='';dom.endingStory.classList.remove('complete');
+    notify('Uma nova jornada começou. Escolha com sabedoria, aventureiro.');
+    dom.showStore.focus();
+  }catch(error){notify(error.message);}
+  finally{dom.tryAgainButton.disabled=false;}
+}
 
 async function boot() {
   renderCategories();
@@ -372,16 +624,20 @@ dom.bagButton.addEventListener('click',()=>openPanel('bag'));
 dom.showStore.addEventListener('click',()=>openPanel('store'));
 dom.quickStore.addEventListener('click',()=>openPanel('store'));
 dom.quickBag.addEventListener('click',()=>openPanel('bag'));
-dom.quickAsk.addEventListener('click',()=>sendMessage('Quanto custa a poção de vida?'));
+dom.quickAsk.addEventListener('click',()=>sendMessage('Quais categorias de mercadorias você tem?'));
 dom.itemSearch.addEventListener('input',renderShop);
 dom.shade.addEventListener('click',closePanels);
 document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',closePanels));
 dom.closePurchase.addEventListener('click',closePurchase);
 dom.cancelPurchase.addEventListener('click',closePurchase);
 dom.purchaseQuantity.addEventListener('input',recalculate);
-dom.purchaseDestination.addEventListener('change',recalculate);
 dom.purchaseForm.addEventListener('submit',confirmPurchase);
 dom.chatForm.addEventListener('submit',(e)=>{e.preventDefault();sendMessage(dom.chatInput.value);});
+dom.resultButton.addEventListener('click',revealEnding);
+dom.tryAgainButton.addEventListener('click',restartJourney);
+for(const eventName of ['wheel','touchstart','pointerdown']){
+  dom.endingStory.addEventListener(eventName,()=>{endingFollowText=false;},{passive:true});
+}
 dom.resetButton.addEventListener('click',async()=>{
   if(!window.confirm('Reiniciar esta demonstração? Seu ouro, itens e compras serão apagados.')) return;
   try {player=await post('reiniciar',{});renderPlayer();notify('Um novo começo... tua bolsa foi restaurada.');}
@@ -389,8 +645,9 @@ dom.resetButton.addEventListener('click',async()=>{
 });
 dom.motionButton.addEventListener('click',()=>{
   reduceMotion=!reduceMotion;
+  document.documentElement.classList.toggle('reduce-motion',reduceMotion);
   dom.motionButton.textContent=reduceMotion?'✧ SEM EFEITOS':'✧ EFEITOS';
-  if(!reduceMotion) requestAnimationFrame(tick);else {drawCastle(0);drawMerchant(0);}
+  if(!reduceMotion) requestAnimationFrame(tick);else {drawMerchant(0);drawRain(0);}
 });
 document.addEventListener('keydown',(event)=>{
   if(event.key==='Escape'){

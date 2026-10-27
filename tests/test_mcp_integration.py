@@ -1,93 +1,92 @@
-"""Smoke test de integração real: executado quando SDK MCP estiver instalado.
-
-CI instala requirements-dev.txt. No ambiente offline de autoria, o teste é marcado skip.
-"""
+"""Smoke test da integração MCP por stdio."""
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
 import pytest
 
-mcp = pytest.importorskip('mcp', reason='SDK MCP não instalado neste ambiente')
+pytest.importorskip('mcp', reason='SDK MCP não instalado neste ambiente')
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-async def _teste():
-    parametros = StdioServerParameters(command=sys.executable,
-                                     args=['-m', 'backend.servidor_sombrio'],
-                                     env={'PYTHONPATH': str(ROOT)})
+def _dados(resultado):
+    if resultado.structuredContent is not None:
+        return resultado.structuredContent
+    return json.loads(resultado.content[0].text)
+
+
+async def _teste(database_path: Path):
+    ambiente = os.environ.copy()
+    ambiente.update({
+        'PYTHONPATH': str(ROOT),
+        'DATABASE_PATH': str(database_path),
+    })
+    parametros = StdioServerParameters(
+        command=sys.executable,
+        args=['-m', 'backend.servidor_sombrio'],
+        env=ambiente,
+    )
     async with stdio_client(parametros) as (read, write):
         async with ClientSession(read, write) as sessao:
             await sessao.initialize()
             lista = await sessao.list_tools()
             nomes = {f.name for f in lista.tools}
             assert nomes == {
-                'listar_loja',
-                'listar_itens',
-                'listar_locais_entrega',
+                'listar_mercadorias',
                 'consultar_item',
-                'consultar_taxa',
-                'calcular_total',
+                'comprar_item',
             }
 
-            grupo = await sessao.call_tool(
-                'listar_itens',
-                {'tipo': 'armas curtas'},
+            pocoes = await sessao.call_tool(
+                'listar_mercadorias',
+                {'categoria': 'pocoes'},
             )
-            assert not grupo.isError
-
-            dados_grupo = grupo.structuredContent
-            if dados_grupo is None:
-                dados_grupo = json.loads(grupo.content[0].text)
-
+            assert not pocoes.isError
+            dados_pocoes = _dados(pocoes)
+            assert dados_pocoes['quantidade'] == 8
             assert {
-                item['id'] for item in dados_grupo['itens']
-            } == {'adaga', 'machado'}
-
-            laminas = await sessao.call_tool(
-                'listar_itens',
-                {'tipo': 'lâminas'},
-            )
-            assert not laminas.isError
-
-            dados_laminas = laminas.structuredContent
-            if dados_laminas is None:
-                dados_laminas = json.loads(laminas.content[0].text)
-
-            assert {
-                item['id'] for item in dados_laminas['itens']
+                item['id'] for item in dados_pocoes['mercadorias']
             } == {
-                'espada', 'espada longa', 'adaga',
-                'machado', 'foice amaldicoada',
+                'pocao de vida', 'pocao de mana', 'pocao de forca',
+                'pocao de invisibilidade', 'antidoto', 'veneno',
+                'veneno paralisante', 'elixir da juventude',
             }
+            assert 'locais' not in dados_pocoes
+            assert 'destinos' not in dados_pocoes
 
-            loja = await sessao.call_tool('listar_loja', {})
-            assert not loja.isError
-
-            dados_loja = loja.structuredContent
-            if dados_loja is None:
-                dados_loja = json.loads(loja.content[0].text)
-
-            assert dados_loja['categorias'] == [
-                'armas', 'municoes', 'armaduras',
-                'pocoes', 'magia', 'utilidades',
-            ]
-
-            item = await sessao.call_tool('consultar_item', {'nome_item': 'poção de vida'})
+            item = await sessao.call_tool(
+                'consultar_item',
+                {'nome_item': 'pocao de vida'},
+            )
             assert not item.isError
-            dados = item.structuredContent
-            if dados is None:
-                dados = json.loads(item.content[0].text)
-            assert dados['encontrado'] is True
-            assert dados['preco'] == 10.0
-            total = await sessao.call_tool('calcular_total',
-                                           {'quantidade': 2, 'preco': 10.0, 'frete': 5.0})
-            assert not total.isError
+            dados_item = _dados(item)
+            assert dados_item['encontrado'] is True
+            assert dados_item['preco_ouros'] == 10
+            assert dados_item['categoria'] == 'pocoes'
+
+            compra = await sessao.call_tool(
+                'comprar_item',
+                {'nome_item': 'pocao de vida', 'quantidade': 2},
+            )
+            assert not compra.isError
+            dados_compra = _dados(compra)
+            assert dados_compra['sucesso'] is True
+            assert dados_compra['estado']['ouro_centavos'] == 98000
+            assert dados_compra['estado']['inventario'][0]['item'] == 'pocao de vida'
+
+            sem_saldo = await sessao.call_tool(
+                'comprar_item',
+                {'nome_item': 'alma engarrafada', 'quantidade': 4},
+            )
+            dados_sem_saldo = _dados(sem_saldo)
+            assert dados_sem_saldo['sucesso'] is False
+            assert dados_sem_saldo['estado']['ouro_centavos'] == 98000
 
 
-def test_mcp_stdio_lista_e_chama_ferramentas():
-    asyncio.run(_teste())
+def test_mcp_stdio_lista_e_chama_ferramentas(tmp_path):
+    asyncio.run(_teste(tmp_path / 'mcp.db'))

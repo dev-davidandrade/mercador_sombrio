@@ -10,22 +10,27 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from backend import agente, banco
-from backend.catalogo import LOJA, TAXAS, CATEGORIA_POR_ITEM, nome_bonito
-from backend.economia import RegraDeNegocio, centavos, calcular_orcamento
+from backend.catalogo import (
+    CATEGORIA_POR_ITEM,
+    LOJA,
+    NOMES_CATEGORIAS,
+    nome_bonito,
+)
+from backend.economia import RegraDeNegocio, calcular_orcamento, centavos
+from backend.desfechos import resolver_desfecho
 
 ROOT = Path(__file__).resolve().parents[1]
 try:
     from dotenv import load_dotenv
     load_dotenv(ROOT / '.env')
 except ImportError:
-    pass  # Apenas para testes de desenvolvimento sem dependências opcionais instaladas.
+    pass
 LOGGER = logging.getLogger(__name__)
 
 
-class Pedido(BaseModel):
+class PedidoCompra(BaseModel):
     item: str = Field(min_length=1, max_length=100)
     quantidade: int = Field(ge=1, le=1000)
-    local: str = Field(min_length=1, max_length=100)
 
 
 class EntradaHistorico(BaseModel):
@@ -52,7 +57,7 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title='Mercador Sombrio', version='0.1.0', lifespan=lifespan)
+    app = FastAPI(title='Mercador Sombrio', version='0.5.0', lifespan=lifespan)
     app.mount('/static', StaticFiles(directory=ROOT / 'frontend'), name='static')
 
     @app.get('/', include_in_schema=False)
@@ -63,7 +68,7 @@ def create_app() -> FastAPI:
     async def saude():
         return {
             'status': 'online',
-            'versao': '0.1.0',
+            'versao': '0.5.0',
             'modo_ia': agente.modo_ia(),
             'ferramentas_mcp': sorted(agente.PERMITIDAS),
         }
@@ -71,11 +76,19 @@ def create_app() -> FastAPI:
     @app.get('/api/loja')
     async def loja():
         return {
-            'itens': [{'id': nome, 'nome': nome_bonito(nome),
-                       'preco_centavos': centavos(preco),
-                       'categoria': CATEGORIA_POR_ITEM[nome]} for nome, preco in LOJA.items()],
-            'destinos': [{'id': destino, 'nome': nome_bonito(destino),
-                          'taxa_centavos': centavos(taxa)} for destino, taxa in TAXAS.items()],
+            'categorias': [
+                {'id': categoria, 'nome': nome}
+                for categoria, nome in NOMES_CATEGORIAS.items()
+            ],
+            'itens': [
+                {
+                    'id': item,
+                    'nome': nome_bonito(item),
+                    'preco_centavos': centavos(preco),
+                    'categoria': CATEGORIA_POR_ITEM[item],
+                }
+                for item, preco in LOJA.items()
+            ],
         }
 
     @app.get('/api/estado')
@@ -83,14 +96,14 @@ def create_app() -> FastAPI:
         return banco.estado()
 
     @app.post('/api/orcamentos')
-    async def orcamentos(pedido: Pedido):
+    async def orcamentos(pedido: PedidoCompra):
         try:
             return calcular_orcamento(**pedido.model_dump()).como_dict()
         except RegraDeNegocio as erro:
             raise HTTPException(status_code=400, detail=str(erro)) from erro
 
     @app.post('/api/compras', status_code=201)
-    async def compras(pedido: Pedido):
+    async def compras(pedido: PedidoCompra):
         try:
             orcamento = calcular_orcamento(**pedido.model_dump())
             return banco.comprar(orcamento)
@@ -100,12 +113,28 @@ def create_app() -> FastAPI:
 
     @app.post('/api/reiniciar')
     async def reiniciar():
-        # Apenas para projeto acadêmico single-player; sem autenticação. Não publicar abertamente.
         return banco.reiniciar()
+
+    @app.get('/api/desfecho')
+    async def desfecho():
+        atual = banco.estado()
+        if not atual['desfecho']['disponivel']:
+            faltam = atual['desfecho']['limite_tipos'] - atual['desfecho']['tipos_escolhidos']
+            raise HTTPException(
+                status_code=409,
+                detail=f'Escolha mais {faltam} tipos de mercadoria antes de partir.',
+            )
+        return {
+            **resolver_desfecho(atual),
+            'progresso': atual['desfecho'],
+        }
 
     @app.post('/api/chat')
     async def chat(pedido: PedidoChat):
-        resultado = await agente.responder(pedido.mensagem, [h.model_dump() for h in pedido.historico])
+        resultado = await agente.responder(
+            pedido.mensagem,
+            [entrada.model_dump() for entrada in pedido.historico],
+        )
         if resultado.get('aviso'):
             LOGGER.warning('Modo básico ativado no chat: %s', resultado['aviso'])
         return resultado

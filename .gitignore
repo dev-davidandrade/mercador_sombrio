@@ -5,6 +5,10 @@ dados/
 *.db-wal
 .DS_Store
 
+# Planejamento local já concluído e arte substituída
+TODO_RESTAURACAO_MERCADOR.md
+frontend/assets/merchant/mercadora-sombria-sprites-v1.png
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
