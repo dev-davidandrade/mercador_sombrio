@@ -12,7 +12,7 @@ LAMINA = "/static/assets/scenes/lamina-invisivel-v1.png"
 PORTAL = "/static/assets/scenes/alem-do-veu-v1.png"
 AMANHECER = "/static/assets/scenes/amanhecer-v1.png"
 
-RECOMECO = "/static/assets/scenes/endings/recomeco-v1.png"
+ULTIMO_MENINO = "/static/assets/scenes/endings/ultimo-menino-v1.png"
 ASCENSAO_VEU = "/static/assets/scenes/endings/ascensao-veu-v1.png"
 NOVO_REI = "/static/assets/scenes/endings/novo-rei-demonio-v1.png"
 HEROI_DESCONHECIDO = "/static/assets/scenes/endings/heroi-desconhecido-v1.png"
@@ -73,20 +73,20 @@ def resolver_desfecho(estado: dict) -> dict:
         if item.get("quantidade", 0) > 0
     }
 
-    if itens == {"elixir da juventude", "tocha"}:
+    if itens == {"elixir da juventude", "flechas"}:
         return _final(
-            "o-heroi-que-recomecou",
-            "O Herói que Recomeçou",
-            "Às vezes, o primeiro passo é voltar ao início.",
+            "o-ultimo-menino",
+            "O Último Menino",
+            "Ele venceu o Rei Demônio. Depois, sobreviveu a tudo.",
             [
-                "O herói chegou aos portões carregando apenas uma tocha e o frasco mais caro de todo o bazar. Estava convencido de que juventude significava força, velocidade e tempo suficiente para corrigir qualquer erro.",
-                "Bebeu o Elixir da Juventude até a última gota. A princípio, as cicatrizes desapareceram e o peso dos anos deixou seus ombros. Então as luvas escorregaram, as botas ficaram enormes e sua voz tornou-se fina demais para pronunciar um desafio convincente.",
-                "Quando a tocha se apagou, uma criança estava perdida diante das muralhas do castelo. Os guardas demoníacos baixaram as lanças, confusos, e levaram o pequeno invasor até o salão do trono.",
-                "O Rei Demônio ouviu a história, permaneceu em silêncio e, para surpresa de todos, recusou o duelo. Disse que conquistar reinos era uma coisa; lutar contra uma criança seria simplesmente deselegante.",
-                "Um círculo de sombras se abriu sob os pés do herói e o devolveu ao bazar, ainda jovem demais para alcançar o balcão. A mercadora colocou uma caixa sob suas botas e devolveu-lhe uma bolsa com mil ouros.",
-                "A jornada recomeçaria. Desta vez, porém, o pequeno aventureiro escolheria como alguém que já conhecia o preço de uma ideia aparentemente perfeita.",
+                "O herói entregou novecentos e noventa e nove ouros pelo Elixir da Juventude. Com a única moeda restante, comprou as flechas mais simples do balcão. Ninguém compreendeu aquela escolha; talvez nem mesmo ele, até beber o frasco diante dos portões do castelo.",
+                "As cicatrizes desapareceram, os anos recuaram e a armadura tornou-se grande demais. O processo só parou quando restou um garoto de olhos antigos, pequeno demais para a espada e incapaz de envelhecer, adoecer ou conservar qualquer ferimento.",
+                "O Rei Demônio atravessou seu coração, queimou seus ossos e o lançou das muralhas. O menino voltou todas as vezes. Quando já não possuía força para erguer a lâmina, usou a última flecha; não para matar, mas para partir a joia que tornava o soberano invencível.",
+                "O reino foi salvo e celebrou o jovem herói. Anos depois, os primeiros amigos morreram. Depois partiram seus filhos, seus netos e as dinastias que aprenderam a contar aquela vitória como lenda. O menino permaneceu exatamente igual.",
+                "Ele viu o castelo virar ruína, novos impérios ocuparem o mundo e os mares cobrirem todos os seus nomes. Quando o sol escureceu e as estrelas começaram a desaparecer, ainda carregava o frasco vazio e o arco apodrecido de sua primeira jornada.",
+                "No fim, a última luz do universo se apagou diante dele. Tudo conheceu a morte — reis, demônios, deuses e o próprio tempo. Tudo, menos o garoto. Sem ninguém para recordar sua vitória, o Último Menino continuou caminhando pelo escuro.",
             ],
-            [CASTELO, DUELO, AMANHECER, RECOMECO],
+            [CASTELO, DUELO, AMANHECER, ULTIMO_MENINO],
             "segredo",
         )
 

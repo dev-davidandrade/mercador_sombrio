@@ -4,12 +4,12 @@ from backend.economia import RegraDeNegocio, calcular_orcamento, centavos
 
 
 def test_precos_fracionarios_sem_erros_float_e_sem_frete():
-    assert centavos(0.5) == 50
+    assert centavos(1.0) == 100
     assert centavos(0.8) == 80
     orcamento = calcular_orcamento('flechas', 3)
-    assert orcamento.preco_unitario_centavos == 50
-    assert orcamento.subtotal_centavos == 150
-    assert orcamento.total_centavos == 150
+    assert orcamento.preco_unitario_centavos == 100
+    assert orcamento.subtotal_centavos == 300
+    assert orcamento.total_centavos == 300
     assert 'taxa_centavos' not in orcamento.como_dict()
 
 

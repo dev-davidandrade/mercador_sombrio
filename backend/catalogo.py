@@ -11,7 +11,7 @@ LOJA = {
     'lanca': 95.0, 'martelo de guerra': 210.0, 'arco': 90.0, 'besta': 150.0,
     'cajado': 110.0, 'foice amaldicoada': 333.0,
     # Munições e arremessáveis
-    'flechas': 0.5, 'flechas de fogo': 2.0, 'virotes': 0.8,
+    'flechas': 1.0, 'flechas de fogo': 2.0, 'virotes': 0.8,
     'facas de arremesso': 6.0, 'bomba': 5.0, 'bomba de fumaca': 8.0,
     # Armaduras e equipamentos
     'escudo': 80.0, 'escudo de torre': 160.0, 'capacete': 50.0,

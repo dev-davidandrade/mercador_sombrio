@@ -254,9 +254,9 @@ def test_ouro_esgotado_libera_final_secreto_antes_de_oito_tipos(client):
         '/api/compras',
         json={'item': 'elixir da juventude', 'quantidade': 1},
     )
-    client.post('/api/compras', json={'item': 'tocha', 'quantidade': 1})
+    client.post('/api/compras', json={'item': 'flechas', 'quantidade': 1})
     estado = client.get('/api/estado').json()
     assert estado['ouro_centavos'] == 0
     assert estado['desfecho']['motivo'] == 'ouro_esgotado'
     final = client.get('/api/desfecho').json()
-    assert final['id'] == 'o-heroi-que-recomecou'
+    assert final['id'] == 'o-ultimo-menino'
